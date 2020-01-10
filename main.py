@@ -27,6 +27,19 @@ class Encoder(nn.Module):
         x = F.relu(self.encoder2(x,edge_index))
         return x, edge_index
 
+# Definition of Encoder
+class Decoder(nn.Module):
+
+    def __init__(self):
+        super(Decoder,self).__init__()
+        self.decoder1 = GATConv(4,50)
+        self.decoder2 = GATConv(50,100)
+
+    def forward(self,x,edge_index):
+        x = F.relu(self.decoder1(x,edge_index))
+        x = F.relu(self.decoder2(x,edge_index))
+        return x, edge_index
+
 # Definition of GNF
 class GNF(nn.Module):
 
@@ -57,11 +70,14 @@ class GNF(nn.Module):
         return z1,z2,s_x
 
 encoder = Encoder()
+decoder = Decoder()
 gnf = GNF()
 max_epoch = 1 
 
 for epoch in range(max_epoch):
     data,edge_index = encoder(data)
-    _,_,log_det = gnf(data,edge_index)
+    z1,z2,log_det = gnf(data,edge_index)
+    z = torch.cat((z1,z2),dim=1)
+    y = decoder(z,edge_index)
 
 print('Done')
