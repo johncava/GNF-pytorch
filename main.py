@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import torch
 from torch_geometric.data import Data
 from torch_geometric.nn import GATConv
+from torch.distributions import Normal
 
 # Initialization of Graph Input
 edge_index = torch.tensor([[0, 1],
@@ -52,22 +53,43 @@ class GNF(nn.Module):
 
     def forward(self,x,edge_index):
         x1,x2 = x[:,:2], x[:,2:]
-        x1,x2,s1 = self.f(x1,x2,edge_index)
+        x1,x2,s1 = self.f_a(x1,x2,edge_index)
+        x2,x1,s2 = self.f_b(x2,x1,edge_index)
         # Calculate Jacobian
-        log_det_xz = torch.sum(s1,axis=1)
+        log_det_xz = torch.sum(s1,axis=1) + torch.sum(s2,axis=1)
         return x1, x2, log_det_xz
 
-    def f(self,x1,x2,edge_index):
+    def f_a(self,x1,x2,edge_index):
         s_x = self.F1(x1,edge_index)
         t_x = self.F2(x1,edge_index)
         x1 = x2 * torch.exp(s_x) + t_x
         return x1,x2,s_x
 
-    def inverse(self,z1,z2):
-        s_x = self.G1(z1)
-        t_x = self.G2(z1)
+    def f_b(self,x1,x2,edge_index):
+        s_x = self.G1(x1,edge_index)
+        t_x = self.G2(x1,edge_index)
+        x1 = x2 * torch.exp(s_x) + t_x
+        return x1,x2,s_x
+
+    def inverse_b(self,z1,z2,edge_index):
+        s_x = self.G1(z1,edge_index)
+        t_x = self.G2(z1,edge_index)
         z2 = (z2 - t_x) * torch.exp(-s_x)
         return z1,z2,s_x
+
+    def inverse_a(self,z1,z2,edge_index):
+        s_x = self.F1(z1,edge_index)
+        t_x = self.F2(z1,edge_index)
+        z2 = (z2 - t_x) * torch.exp(-s_x)
+        return z1,z2,s_x
+
+    def inverse(self,z,edge_index):
+        z1,z2 = z[:,:2], z[:,2:]
+        z1,z2,s1 = self.inverse_a(z1,z2,edge_index)
+        z2,z1,s2 = self.inverse_b(z2,z1,edge_index)
+        # Calculate Jacobian
+        log_det_zx = torch.sum(-s1,axis=1) + torch.sum(-s2,axis=1)
+        return z1, z2, log_det_zx
 
 encoder = Encoder()
 decoder = Decoder()
@@ -76,7 +98,20 @@ max_epoch = 1
 
 for epoch in range(max_epoch):
     data,edge_index = encoder(data)
-    z1,z2,log_det = gnf(data,edge_index)
+    # Forward
+    z1,z2,log_det_xz = gnf.forward(data,edge_index)
+    log_det_xz = log_det_xz.unsqueeze(0)
+    log_det_xz = log_det_xz.mm(torch.ones(log_det_xz.t().size()))
+    #self.log_det_xz.append(log_det_xz)
+    # Sample
+    z = torch.cat((z1,z2),dim=1)
+    n = Normal(z, torch.randn(z.size()))
+    z = n.sample()
+    # Inverse
+    z1,z2, log_det_zx = gnf.inverse(z,edge_index)
+    log_det_zx = log_det_zx.unsqueeze(0)
+    log_det_zx = log_det_zx.mm(torch.ones(log_det_zx.t().size()))
+    # Decoder
     z = torch.cat((z1,z2),dim=1)
     y = decoder(z,edge_index)
 
