@@ -85,8 +85,8 @@ class GNF(nn.Module):
 
     def inverse(self,z,edge_index):
         z1,z2 = z[:,:2], z[:,2:]
-        z1,z2,s1 = self.inverse_a(z1,z2,edge_index)
-        z2,z1,s2 = self.inverse_b(z2,z1,edge_index)
+        z1,z2,s1 = self.inverse_b(z1,z2,edge_index)
+        z2,z1,s2 = self.inverse_a(z2,z1,edge_index)
         # Calculate Jacobian
         log_det_zx = torch.sum(-s1,axis=1) + torch.sum(-s2,axis=1)
         return z1, z2, log_det_zx
